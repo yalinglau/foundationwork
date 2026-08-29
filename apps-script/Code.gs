@@ -131,7 +131,9 @@ function readTasks(ss) {
 
 function addTaskRow(ss, task) {
   const sh = getOrCreateSheet(ss, 'Tasks', TASK_HEADERS);
-  const row = TASK_HEADERS.map(h => {
+  const lastCol = sh.getLastColumn();
+  const headers = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : TASK_HEADERS;
+  const row = headers.map(h => {
     if (h === 'assignees' || h === 'acknowledged_by' || h === 'done_by') return (task[h] || []).join('|');
     if (h === 'done') return !!task.done;
     return task[h] !== undefined && task[h] !== null ? task[h] : '';

@@ -240,6 +240,8 @@ export default function App() {
   const [myAiUnlocked, setMyAiUnlocked] = useState(() => localStorage.getItem(MY_AI_UNLOCKED_KEY) === "true");
   const [codeDraft, setCodeDraft] = useState("");
   const [newCodeDraft, setNewCodeDraft] = useState("");
+  const [completedRetentionDays, setCompletedRetentionDays] = useState(7);
+  const [newRetentionDraft, setNewRetentionDraft] = useState("");
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
   const toastTimerRef = useRef(null);
@@ -266,6 +268,7 @@ export default function App() {
       setColleagueList(data.colleagues || []);
       setAiUnlockCode((data.settings && data.settings.ai_unlock_code) || "");
       setBossName((data.settings && data.settings.boss_name) || "");
+      setCompletedRetentionDays(Number((data.settings && data.settings.completed_retention_days) || 7));
       setConnectionError("");
     } catch (e) {
       setConnectionError("無法連線到 Google Sheets，請確認網址與部署設定是否正確（詳見 README）。");
@@ -369,6 +372,14 @@ export default function App() {
     showToast(`已將「${clean}」設為執行長帳號`);
     postAction({ action: "setSetting", key: "boss_name", value: clean });
   }
+  function adminSetRetention() {
+    const n = parseInt(newRetentionDraft, 10);
+    if (!n || n < 1) { showToast("請輸入大於 0 的天數"); return; }
+    setCompletedRetentionDays(n);
+    setNewRetentionDraft("");
+    showToast(`已完成工作將保留 ${n} 天`);
+    postAction({ action: "setSetting", key: "completed_retention_days", value: n });
+  }
 
   const projects = Array.from(new Set([...projectList, ...tasks.map(t => t.project).filter(Boolean)])).sort();
   const colleagues = Array.from(new Set([...colleagueList, ...tasks.flatMap(t => t.assignees)])).filter(c => c && c !== myName).sort();
@@ -386,7 +397,9 @@ export default function App() {
     return tasks.filter(t => t.assignees.includes(target));
   })();
   const viewingSomeoneElse = !!(viewingAs && viewingAs !== "__all__" && viewingAs !== myName);
-  const completedVisible = visibleTasks.filter(t => t.done).sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
+  const completedVisible = visibleTasks
+    .filter(t => t.done && daysSince(t.completed_at || t.created_at) <= completedRetentionDays)
+    .sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
 
   const pendingAcks = myName
     ? tasks.filter(t => !t.done && t.assignees.includes(myName) && t.created_by && t.created_by.trim() !== myName.trim() && !(t.acknowledged_by || []).includes(myName))
@@ -1067,6 +1080,21 @@ export default function App() {
                   <input className="wh-input" placeholder="執行長的登入名字" value={newBossDraft} onChange={e => setNewBossDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); adminSetBoss(); } }} style={{ ...inputStyle(), flex: 1, fontSize: 14 }} />
                   <button className="wh-btn" onClick={adminSetBoss} style={primaryBtnStyle()}>設定</button>
+                </div>
+              </div>
+
+              <div style={{ borderTop: `1px solid ${C.borderSoft}`, paddingTop: 14, marginTop: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <CheckCircle2 size={13} color={C.textDim} /><span style={{ fontSize: 14, fontWeight: 700, color: C.textDim }}>已完成工作顯示天數</span>
+                </div>
+                <div style={{ fontSize: 13, color: C.textFaint, marginBottom: 8, lineHeight: 1.5 }}>
+                  超過這個天數的已完成工作，不會再出現在「顯示已完成工作」清單裡，但資料還是完整保留在 Google Sheets，不會被刪除。
+                </div>
+                <div style={{ fontSize: 14, color: C.text, marginBottom: 6 }}>目前設定：<span style={{ fontFamily: FONT_MONO, color: C.accent }}>{completedRetentionDays} 天</span></div>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <input className="wh-input" type="number" min="1" placeholder="天數，例如 7" value={newRetentionDraft} onChange={e => setNewRetentionDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); adminSetRetention(); } }} style={{ ...inputStyle(), flex: 1, fontSize: 14 }} />
+                  <button className="wh-btn" onClick={adminSetRetention} style={primaryBtnStyle()}>設定</button>
                 </div>
               </div>
             </div>
