@@ -389,7 +389,7 @@ export default function App() {
   const completedVisible = visibleTasks.filter(t => t.done).sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
 
   const pendingAcks = myName
-    ? tasks.filter(t => !t.done && t.assignees.includes(myName) && t.created_by && t.created_by !== myName && !(t.acknowledged_by || []).includes(myName))
+    ? tasks.filter(t => !t.done && t.assignees.includes(myName) && t.created_by && t.created_by.trim() !== myName.trim() && !(t.acknowledged_by || []).includes(myName))
     : [];
   function acknowledgeTask(id) {
     const target = tasks.find(t => t.id === id);
@@ -666,7 +666,7 @@ export default function App() {
               <Badge text={`${t.done_by.length}/${t.assignees.length} 完成`} color={C.accent} soft={C.accentSoft} />
             )}
             {myName && t.assignees.length > 0 && !t.assignees.includes(myName) && t.created_by === myName && (
-              <Badge text="已指派" color={C.textDim} soft={C.bgElevated} />
+              <Badge text="已分配" color={C.textDim} soft={C.bgElevated} />
             )}
             {t.due_date && (
               <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: overdue ? C.danger : C.textDim }}>{overdue ? "逾期 " : ""}{fmtShort(t.due_date)}</span>
@@ -830,6 +830,7 @@ export default function App() {
             </div>
           </div>
           <div className="wh-boxgrid">{BUCKETS.map(renderBox)}</div>
+          {!viewingSomeoneElse && (
           <div className="wh-sidepanel">
             <div className="wh-box" style={{ padding: 10, maxHeight: 480 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -849,6 +850,7 @@ export default function App() {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -1081,7 +1083,7 @@ export default function App() {
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
                       <UserPlus size={16} color={C.accent} />
-                      <span style={{ fontSize: 15, fontWeight: 700, color: C.accent }}>你被指派了新工作</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.accent }}>你有新工作</span>
                     </div>
                     {pendingAcks.length > 1 && (
                       <div style={{ fontSize: 13, color: C.textFaint, marginBottom: 10 }}>還有 {pendingAcks.length - 1} 項待確認</div>
@@ -1092,7 +1094,7 @@ export default function App() {
                       <div>分類：<b style={{ color: bucketMeta(t.bucket).color }}>{bucketMeta(t.bucket).label}</b></div>
                       {t.due_date && <div>完成時限：<b style={{ color: C.text, fontFamily: FONT_MONO }}>{fmtShort(t.due_date)}</b></div>}
                       {others.length > 0 && <div>共同負責：<b style={{ color: C.text }}>{others.join("、")}</b></div>}
-                      <div>指派人：<b style={{ color: C.text }}>{t.created_by}</b></div>
+                      <div>分配者：<b style={{ color: C.text }}>{t.created_by}</b></div>
                     </div>
                     <button className="wh-btn" onClick={() => acknowledgeTask(t.id)}
                       style={{ ...primaryBtnStyle(), width: "100%", padding: "10px 0", fontSize: 16 }}>
@@ -1112,7 +1114,7 @@ export default function App() {
 function inputStyle() {
   return { width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 9px", color: C.text, fontSize: 15, fontFamily: FONT_MONO };
 }
-function labelStyle() { return { fontSize: 12.5, color: C.textFaint, display: "flex", flexDirection: "column", gap: 3, flex: "1 1 120px" }; }
+function labelStyle() { return { fontSize: 12.5, color: C.textFaint, display: "flex", flexDirection: "column", gap: 3, flex: "1 1 120px", minWidth: 0 }; }
 function primaryBtnStyle() { return { padding: "7px 14px", borderRadius: 8, background: C.accent, color: "#062622", fontWeight: 700, fontSize: 14.5, border: "none" }; }
 function ghostBtnStyle() { return { padding: "7px 14px", borderRadius: 8, background: "transparent", color: C.textDim, fontWeight: 600, fontSize: 14.5, border: `1px solid ${C.border}` }; }
 function emptyStyle() { return { padding: "36px 12px", textAlign: "center", color: C.textFaint, fontSize: 15, lineHeight: 1.6 }; }
