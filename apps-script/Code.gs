@@ -20,7 +20,7 @@
  * - Settings 分頁多一個 key：boss_name，用來指定誰是老闆帳號
  */
 
-const TASK_HEADERS = ['id','title','project','assignees','bucket','due_date','follow_up_date','notes','confidence','done','created_at','completed_at','source','created_by'];
+const TASK_HEADERS = ['id','title','project','assignees','bucket','due_date','follow_up_date','notes','confidence','done','created_at','completed_at','source','created_by','acknowledged_by'];
 
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -105,6 +105,7 @@ function readTasks(ss) {
       const obj = {};
       headers.forEach((h, i) => { obj[h] = row[i]; });
       obj.assignees = obj.assignees ? String(obj.assignees).split('|').filter(Boolean) : [];
+      obj.acknowledged_by = obj.acknowledged_by ? String(obj.acknowledged_by).split('|').filter(Boolean) : [];
       obj.done = obj.done === true || obj.done === 'true' || obj.done === 'TRUE';
       ['due_date', 'follow_up_date', 'created_at', 'completed_at'].forEach(k => {
         if (obj[k] instanceof Date) {
@@ -118,7 +119,7 @@ function readTasks(ss) {
 function addTaskRow(ss, task) {
   const sh = getOrCreateSheet(ss, 'Tasks', TASK_HEADERS);
   const row = TASK_HEADERS.map(h => {
-    if (h === 'assignees') return (task.assignees || []).join('|');
+    if (h === 'assignees' || h === 'acknowledged_by') return (task[h] || []).join('|');
     if (h === 'done') return !!task.done;
     return task[h] !== undefined && task[h] !== null ? task[h] : '';
   });
@@ -135,7 +136,7 @@ function updateTaskRow(ss, id, patch) {
       headers.forEach((h, i) => {
         if (patch[h] !== undefined) {
           let v = patch[h];
-          if (h === 'assignees') v = (v || []).join('|');
+          if (h === 'assignees' || h === 'acknowledged_by') v = (v || []).join('|');
           sh.getRange(r + 1, i + 1).setValue(v);
         }
       });
