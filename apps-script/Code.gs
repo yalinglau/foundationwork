@@ -20,7 +20,7 @@
  * - Settings 分頁多一個 key：boss_name，用來指定誰是老闆帳號
  */
 
-const TASK_HEADERS = ['id','title','project','assignees','bucket','due_date','follow_up_date','notes','confidence','done','created_at','completed_at','source','created_by','acknowledged_by'];
+const TASK_HEADERS = ['id','title','project','assignees','bucket','due_date','follow_up_date','notes','confidence','done','done_by','created_at','completed_at','source','created_by','acknowledged_by'];
 
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -90,8 +90,20 @@ function getOrCreateSheet(ss, name, headers) {
   if (!sh) {
     sh = ss.insertSheet(name);
     if (headers) sh.appendRow(headers);
+    return sh;
   }
+  if (headers) ensureHeaders(sh, headers);
   return sh;
+}
+
+// 幫既有的分頁補上程式碼裡新增、但分頁本身還沒有的欄位（例如舊資料庫沒有 acknowledged_by、done_by 這種後來才加的欄位）
+function ensureHeaders(sh, headers) {
+  const lastCol = sh.getLastColumn();
+  const currentHeaders = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  const missing = headers.filter(h => currentHeaders.indexOf(h) === -1);
+  if (missing.length > 0) {
+    sh.getRange(1, currentHeaders.length + 1, 1, missing.length).setValues([missing]);
+  }
 }
 
 function readTasks(ss) {
@@ -106,6 +118,7 @@ function readTasks(ss) {
       headers.forEach((h, i) => { obj[h] = row[i]; });
       obj.assignees = obj.assignees ? String(obj.assignees).split('|').filter(Boolean) : [];
       obj.acknowledged_by = obj.acknowledged_by ? String(obj.acknowledged_by).split('|').filter(Boolean) : [];
+      obj.done_by = obj.done_by ? String(obj.done_by).split('|').filter(Boolean) : [];
       obj.done = obj.done === true || obj.done === 'true' || obj.done === 'TRUE';
       ['due_date', 'follow_up_date', 'created_at', 'completed_at'].forEach(k => {
         if (obj[k] instanceof Date) {
@@ -119,7 +132,7 @@ function readTasks(ss) {
 function addTaskRow(ss, task) {
   const sh = getOrCreateSheet(ss, 'Tasks', TASK_HEADERS);
   const row = TASK_HEADERS.map(h => {
-    if (h === 'assignees' || h === 'acknowledged_by') return (task[h] || []).join('|');
+    if (h === 'assignees' || h === 'acknowledged_by' || h === 'done_by') return (task[h] || []).join('|');
     if (h === 'done') return !!task.done;
     return task[h] !== undefined && task[h] !== null ? task[h] : '';
   });
@@ -136,7 +149,7 @@ function updateTaskRow(ss, id, patch) {
       headers.forEach((h, i) => {
         if (patch[h] !== undefined) {
           let v = patch[h];
-          if (h === 'assignees' || h === 'acknowledged_by') v = (v || []).join('|');
+          if (h === 'assignees' || h === 'acknowledged_by' || h === 'done_by') v = (v || []).join('|');
           sh.getRange(r + 1, i + 1).setValue(v);
         }
       });

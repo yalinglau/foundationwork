@@ -66,6 +66,7 @@ function normalizeTask(t) {
     ...t,
     assignees: Array.isArray(t.assignees) ? t.assignees.filter(Boolean) : [],
     acknowledged_by: Array.isArray(t.acknowledged_by) ? t.acknowledged_by.filter(Boolean) : [],
+    done_by: Array.isArray(t.done_by) ? t.done_by.filter(Boolean) : [],
   };
 }
 
@@ -385,6 +386,7 @@ export default function App() {
     return tasks.filter(t => t.assignees.includes(target));
   })();
   const viewingSomeoneElse = !!(viewingAs && viewingAs !== "__all__" && viewingAs !== myName);
+  const completedVisible = visibleTasks.filter(t => t.done).sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
 
   const pendingAcks = myName
     ? tasks.filter(t => !t.done && t.assignees.includes(myName) && t.created_by && t.created_by !== myName && !(t.acknowledged_by || []).includes(myName))
@@ -442,7 +444,7 @@ export default function App() {
       bucket: t.bucket || "later", due_date: t.due_date || null, follow_up_date: t.follow_up_date || null,
       notes: t.notes || "", confidence: t.confidence || null, done: false,
       created_at: now, completed_at: null, source: t.source || "manual", created_by: myName || "",
-      acknowledged_by: [],
+      acknowledged_by: [], done_by: [],
     }));
     setTasks(prev => [...prev, ...newOnes]);
     newOnes.forEach(t => postAction({ action: "addTask", task: t }));
@@ -450,10 +452,20 @@ export default function App() {
   function toggleDone(id) {
     setTasks(prev => prev.map(t => {
       if (t.id !== id) return t;
-      const done = !t.done;
-      const completed_at = done ? new Date().toISOString() : null;
-      postAction({ action: "updateTask", id, patch: { done, completed_at } });
-      return { ...t, done, completed_at };
+      let nextDoneBy = t.done_by || [];
+      let nextDone;
+      if (t.assignees.length > 1 && myName && t.assignees.includes(myName)) {
+        // 多人共同負責：只切換「我自己」那份的完成狀態，不影響其他人
+        nextDoneBy = nextDoneBy.includes(myName) ? nextDoneBy.filter(x => x !== myName) : [...nextDoneBy, myName];
+        nextDone = t.assignees.every(a => nextDoneBy.includes(a));
+      } else {
+        // 單人工作、沒指定負責人、或不是負責人之一：直接切換整份工作
+        nextDone = !t.done;
+        nextDoneBy = nextDone ? (t.assignees.length ? [...t.assignees] : (myName ? [myName] : [])) : [];
+      }
+      const completed_at = nextDone ? new Date().toISOString() : null;
+      postAction({ action: "updateTask", id, patch: { done: nextDone, done_by: nextDoneBy, completed_at } });
+      return { ...t, done: nextDone, done_by: nextDoneBy, completed_at };
     }));
   }
   function deleteTask(id) {
@@ -630,17 +642,28 @@ export default function App() {
         </div>
       );
     }
+    const myOwnDone = t.assignees.length > 1 && myName && t.assignees.includes(myName)
+      ? (t.done_by || []).includes(myName)
+      : t.done;
     return (
       <div key={t.id} className="wh-row" style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 6px" }}>
-        <div className="wh-check" onClick={() => toggleDone(t.id)} style={{ marginTop: 2 }}>
-          {t.done ? <CheckCircle2 size={17} color={C.accent} /> : <Circle size={17} color={overdue ? C.danger : C.textFaint} />}
+        <div className="wh-check" onClick={() => toggleDone(t.id)} style={{ marginTop: 2 }} title={t.assignees.length > 1 ? "標記我自己那份完成" : undefined}>
+          {myOwnDone ? <CheckCircle2 size={17} color={C.accent} /> : <Circle size={17} color={overdue ? C.danger : C.textFaint} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15.5, lineHeight: 1.4, color: t.done ? C.textFaint : C.text, textDecoration: t.done ? "line-through" : "none", wordBreak: "break-word" }}>{t.title}</div>
+          {t.notes && (
+            <div style={{ fontSize: 12, color: C.textFaint, fontStyle: "italic", marginTop: 2, lineHeight: 1.4, wordBreak: "break-word" }} title={t.notes}>
+              {t.notes}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
             <Badge text={t.project} color={C.textDim} soft={C.bgElevated} />
             {t.assignees.length > 0 && (
               <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 12.5, color: C.textDim }}><User size={10} />{t.assignees.join("、")}</span>
+            )}
+            {t.assignees.length > 1 && !t.done && (t.done_by || []).length > 0 && (
+              <Badge text={`${t.done_by.length}/${t.assignees.length} 完成`} color={C.accent} soft={C.accentSoft} />
             )}
             {myName && t.assignees.length > 0 && !t.assignees.includes(myName) && t.created_by === myName && (
               <Badge text="已指派" color={C.textDim} soft={C.bgElevated} />
@@ -665,9 +688,8 @@ export default function App() {
   }
 
   function renderBox(bucket) {
-    const all = visibleTasks.filter(t => t.bucket === bucket.id);
-    const active = all.filter(t => !t.done).sort((a, b) => (a.due_date || a.follow_up_date || "9999").localeCompare(b.due_date || b.follow_up_date || "9999"));
-    const completed = all.filter(t => t.done);
+    const active = visibleTasks.filter(t => t.bucket === bucket.id && !t.done)
+      .sort((a, b) => (a.due_date || a.follow_up_date || "9999").localeCompare(b.due_date || b.follow_up_date || "9999"));
     return (
       <div key={bucket.id} className="wh-box" style={{ minHeight: 240, maxHeight: 460, border: `1.5px solid ${bucket.color}55` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1.5px solid ${bucket.color}55`, background: bucket.soft }}>
@@ -675,14 +697,7 @@ export default function App() {
           <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: bucket.color, opacity: 0.85 }}>{active.length}</span>
         </div>
         <div className="wh-scroll" style={{ padding: "4px 8px", overflowY: "auto", flex: 1 }}>
-          {active.length === 0 && completed.length === 0 && <div style={{ ...emptyStyle(), padding: "24px 8px" }}>沒有工作</div>}
-          {active.map(renderTaskRow)}
-          {showDone && completed.length > 0 && (
-            <div style={{ marginTop: active.length > 0 ? 8 : 0 }}>
-              <div style={{ fontSize: 12.5, color: C.textFaint, padding: "4px 6px", fontFamily: FONT_MONO }}>已完成（{completed.length}）</div>
-              {completed.map(renderTaskRow)}
-            </div>
-          )}
+          {active.length === 0 ? <div style={{ ...emptyStyle(), padding: "24px 8px" }}>沒有工作</div> : active.map(renderTaskRow)}
         </div>
       </div>
     );
@@ -837,7 +852,27 @@ export default function App() {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <button className="wh-btn" onClick={() => setShowDone(s => !s)} style={ghostBtnStyle()}>{showDone ? "隱藏已完成" : "顯示已完成"}</button>
+          <button className="wh-btn" onClick={() => setShowDone(s => !s)} style={ghostBtnStyle()}>
+            {showDone ? "隱藏已完成工作" : `顯示已完成工作${completedVisible.length ? `（${completedVisible.length}）` : ""}`}
+          </button>
+          {showDone && (
+            <div className="wh-fadein wh-box" style={{ marginTop: 8, maxHeight: 320 }}>
+              <div className="wh-scroll" style={{ padding: "6px 10px", overflowY: "auto", flex: 1 }}>
+                {completedVisible.length === 0 ? (
+                  <div style={{ ...emptyStyle(), padding: "18px 8px" }}>還沒有已完成的工作</div>
+                ) : BUCKETS.map(b => {
+                  const items = completedVisible.filter(t => t.bucket === b.id);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={b.id} style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 12.5, color: b.color, fontFamily: FONT_MONO, padding: "4px 4px" }}>{b.label}</div>
+                      {items.map(renderTaskRow)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {!viewingSomeoneElse && (
@@ -978,7 +1013,7 @@ export default function App() {
         )}
 
         {showSettings && (
-          <div className="wh-fadein" style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,0.88)", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 10 }}>
+          <div className="wh-fadein" style={{ position: "fixed", inset: 0, background: "rgba(6,9,14,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1000 }}>
             <div style={{ width: "100%", maxWidth: 420, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, boxShadow: "0 20px 50px rgba(0,0,0,0.5)", maxHeight: "85vh", overflowY: "auto" }} className="wh-scroll">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>設定</div>
@@ -1037,8 +1072,8 @@ export default function App() {
         )}
 
         {pendingAcks.length > 0 && (
-          <div className="wh-fadein" style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,0.92)", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 20 }}>
-            <div style={{ width: "100%", maxWidth: 380, background: C.bgCard, border: `2px solid ${C.accent}`, borderRadius: 14, padding: 20, boxShadow: "0 20px 50px rgba(0,0,0,0.6)" }}>
+          <div className="wh-fadein" style={{ position: "fixed", inset: 0, background: "rgba(6,9,14,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1001 }}>
+            <div style={{ width: "100%", maxWidth: 380, maxHeight: "85vh", overflowY: "auto", background: C.bgCard, border: `2px solid ${C.accent}`, borderRadius: 14, padding: 20, boxShadow: "0 20px 50px rgba(0,0,0,0.6)" }} className="wh-scroll">
               {(() => {
                 const t = pendingAcks[0];
                 const others = t.assignees.filter(a => a !== myName);
